@@ -126,11 +126,11 @@ describe("syntax errors", function()
       { y = 1, msg = "malformed number" },
    }))
 
-   it("valid strings: numbered escape", util.check [[
+   it("valid strings: numbered escape", util.check([[
       print("hello\1hello")
       print("hello\12hello")
       print("hello\123hello")
-   ]])
+   ]]))
 
    it("malformed string: numbered escape", util.check_syntax_error([[
       print("hello\300hello")
@@ -155,7 +155,26 @@ describe("syntax errors", function()
          bar()
       end
    ]], {
-      { y = 15, msg = "syntax error, expected 'end' to close construct started at :5:22:" },
+      { y = 7, x = 13, msg = "syntax error hint: construct starting here is not aligned with its 'end' at foo.tl:10:10:" },
+      { y = 15, msg = "syntax error, expected 'end' to close construct started at foo.tl:5:22:" },
+   }))
+
+   it("reports correct location of redeclaration (#542)", util.check_syntax_error([[
+      local record Outer
+          record Path
+              text: string
+          end
+
+          record Path
+              text: string
+          end
+
+          record Other
+              field: integer
+          end
+      end
+   ]], {
+      { y = 6, msg = "attempt to redeclare field 'Path'" },
    }))
 
    it("type missing local or global", util.check_syntax_error([[
@@ -215,4 +234,35 @@ describe("syntax errors", function()
          end
       end
    end)
+
+   it("reports a helpful error when 'local' or 'global' are missing in records", util.check_syntax_error([[
+      record Foo
+         s: string
+      end
+      if x < 0 then
+         print("parse continues as normal")
+      end
+   ]], {
+      { y = 1, msg = "records need to be declared with 'local record' or 'global record'" },
+   }))
+
+   it("reports a helpful error when 'local' or 'global' are missing in enums", util.check_syntax_error([[
+      enum Foo
+         "hi"
+      end
+      if x < 0 then
+         print("parse continues as normal")
+      end
+   ]], {
+      { y = 1, msg = "enums need to be declared with 'local enum' or 'global enum'" },
+   }))
+
+   it("reports a helpful error when 'local' or 'global' are missing in types", util.check_syntax_error([[
+      type F = function(integer): integer
+      if x < 0 then
+         print("parse continues as normal")
+      end
+   ]], {
+      { y = 1, msg = "types need to be declared with 'local type' or 'global type'" },
+   }))
 end)

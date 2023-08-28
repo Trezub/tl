@@ -17,7 +17,7 @@ describe("pcall", function()
       { msg = "argument 2: got integer, expected string" }
    }))
 
-   it("pcalls through pcall", util.check [[
+   it("pcalls through pcall", util.check([[
       local function f(s: string): number
          return 123
       end
@@ -26,9 +26,9 @@ describe("pcall", function()
       assert(a == true)
       assert(b == true)
       assert(d == 123)
-   ]])
+   ]]))
 
-   it("pcalls through pcall through pcall", util.check [[
+   it("pcalls through pcall through pcall", util.check([[
       local function f(s: string): number
          return 123
       end
@@ -38,7 +38,7 @@ describe("pcall", function()
       assert(b == true)
       assert(c == true)
       assert(d == 123)
-   ]])
+   ]]))
 
    it("pcalls through other magical stdlib functions", function()
       -- ok
@@ -71,5 +71,41 @@ describe("pcall", function()
       local xyz: number = yep
    ]], {
       { msg = "xyz: got boolean, expected number" }
+   }))
+
+   it("does not warn when passed a method as the first argument", util.check_warnings([[
+      local record Text
+         text: string
+      end
+      function Text:print(): nil
+         if self.text == nil then
+            error("Text is nil")
+         end
+         print(self.text)
+      end
+      local myText: Text = {}
+      local ok, err = pcall(myText.print, myText)
+      if not ok then
+         print(err)
+      end
+   ]], {}, {}))
+
+   it("checks the correct input arguments when passed a method as the first argument", util.check_type_error([[
+      local record Text
+         text: string
+      end
+      function Text:print(): nil
+         if self.text == nil then
+            error("Text is nil")
+         end
+         print(self.text)
+      end
+      local myText: Text = {}
+      local ok, err = pcall(myText.print, 12)
+      if not ok then
+         print(err)
+      end
+   ]], {
+      { msg = "argument 2: got integer, expected Text" }
    }))
 end)

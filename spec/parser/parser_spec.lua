@@ -1,14 +1,15 @@
 local tl = require("tl")
 
 local function strip_typeids(t)
+   local copy = {}
    for k,v in pairs(t) do
       if type(v) == "table" then
-         strip_typeids(v)
-      elseif k == "typeid" then
-         t[k] = nil
+         copy[k] = strip_typeids(v)
+      elseif k ~= "typeid" then
+         copy[k] = v
       end
    end
-   return t
+   return copy
 end
 
 describe("parser", function()
@@ -66,4 +67,33 @@ describe("parser", function()
       assert.same("table_item", result.ast[1].exps[1][1].kind)
       assert.same("implicit", result.ast[1].exps[1][1].key_parsed)
    end)
+
+   it("accepts nested type arguments", function ()
+      local result = tl.process_string([[
+         local record List<T>
+            items: {T}
+         end
+
+         local record Box<T>
+            item: {T}
+         end
+
+         local list_of_boxes: List<Box<string>> = {
+            items = {}
+         }
+
+         local box: Box<string> = { item = "hello" }
+
+         list_of_boxes.items[1] = box
+      ]])
+      assert.same({}, result.syntax_errors)
+      assert.same(5, #result.ast)
+      assert.same("local_type", result.ast[1].kind)
+      assert.same("local_type", result.ast[2].kind)
+      assert.same("local_declaration", result.ast[3].kind)
+      assert.same("local_declaration", result.ast[4].kind)
+      assert.same("assignment", result.ast[5].kind)
+   end)
+
+
 end)

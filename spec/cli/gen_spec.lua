@@ -3,6 +3,9 @@ local util = require("spec.util")
 local input_file = [[
 global type1 = 2
 
+global type type_g = record
+end
+
 local type type_2 = record
 end
 
@@ -36,7 +39,10 @@ local c = 100
 local output_file = [[
 type1 = 2
 
-local type_2 = {}
+type_g = {}
+
+
+
 
 
 local function bla()
@@ -104,6 +110,16 @@ describe("tl gen", function()
 
             print(add(10, 20))
          ]], util.read_file(lua_name))
+      end)
+
+      it("handles Unix newlines on every OS", function()
+         local name = util.write_tmp_file(finally, "print'1'--comment\nprint'2'\nprint'3'\n")
+         local pd = io.popen(util.tl_cmd("gen", name), "r")
+         local output = pd:read("*a")
+         util.assert_popen_close(0, pd:close())
+         local lua_name = tl_to_lua(name)
+         assert.match("Wrote: " .. lua_name, output, 1, true)
+         assert.same("print('1')\nprint('2')\nprint('3')\n", util.read_file(lua_name))
       end)
 
       it("ignores type errors", function()
@@ -187,6 +203,28 @@ describe("tl gen", function()
             local y = bit32.lshift(2, 3)
          ]], util.read_file(lua_name))
       end)
+
+      it("generates bit32 operations even for invalid variables (regression test for #673)", function()
+         local name = util.write_tmp_file(finally, [[
+
+            local foo = require("nonexisting")
+            local y = 2 | (foo.wat << 9)
+            local x = ~y
+            local z = aa // bb
+         ]])
+         local pd = io.popen(util.tl_cmd("gen", "--gen-target=5.1", name), "r")
+         local output = pd:read("*a")
+         util.assert_popen_close(0, pd:close())
+         local lua_name = tl_to_lua(name)
+         assert.match("Wrote: " .. lua_name, output, 1, true)
+         util.assert_line_by_line([[
+            local bit32 = bit32; if not bit32 then local p, m = pcall(require, 'bit32'); if p then bit32 = m end end
+            local foo = require("nonexisting")
+            local y = bit32.bor(2, (bit32.lshift(foo.wat, 9)))
+            local x = bit32.bnot(y)
+            local z = math.floor(aa / bb)
+         ]], util.read_file(lua_name))
+      end)
    end)
 
    describe("with --gen-target=5.3", function()
@@ -212,8 +250,16 @@ describe("tl gen", function()
       local t = {1, 2, 3, 4}
       print(table.unpack(t))
       local n = 42
+      local maxi = math.maxinteger
+      local mini = math.mininteger
       if n is integer then
          print("hello")
+      end
+      if maxi is integer then
+         print("maxi")
+      end
+      if mini is integer then
+         print("mini")
       end
    ]]
 
@@ -222,28 +268,52 @@ describe("tl gen", function()
       local t = { 1, 2, 3, 4 }
       print(table.unpack(t))
       local n = 42
+      local maxi = math.maxinteger
+      local mini = math.mininteger
       if math.type(n) == "integer" then
          print("hello")
+      end
+      if math.type(maxi) == "integer" then
+         print("maxi")
+      end
+      if math.type(mini) == "integer" then
+         print("mini")
       end
    ]]
 
    local output_code_with_optional_compat = [[
-      local _tl_compat; if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then local p, m = pcall(require, 'compat53.module'); if p then _tl_compat = m end end; local math = _tl_compat and _tl_compat.math or math; local table = _tl_compat and _tl_compat.table or table; local _tl_table_unpack = unpack or table.unpack
+      local _tl_compat; if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then local p, m = pcall(require, 'compat53.module'); if p then _tl_compat = m end end; local math = _tl_compat and _tl_compat.math or math; local _tl_math_maxinteger = math.maxinteger or math.pow(2, 53); local _tl_math_mininteger = math.mininteger or -math.pow(2, 53) - 1; local table = _tl_compat and _tl_compat.table or table; local _tl_table_unpack = unpack or table.unpack
       local t = { 1, 2, 3, 4 }
       print(_tl_table_unpack(t))
       local n = 42
+      local maxi = _tl_math_maxinteger
+      local mini = _tl_math_mininteger
       if math.type(n) == "integer" then
          print("hello")
+      end
+      if math.type(maxi) == "integer" then
+         print("maxi")
+      end
+      if math.type(mini) == "integer" then
+         print("mini")
       end
    ]]
 
    local output_code_with_required_compat = [[
-      local _tl_compat; if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then local p, m = true, require('compat53.module'); if p then _tl_compat = m end end; local math = _tl_compat and _tl_compat.math or math; local table = _tl_compat and _tl_compat.table or table; local _tl_table_unpack = unpack or table.unpack
+      local _tl_compat; if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then local p, m = true, require('compat53.module'); if p then _tl_compat = m end end; local math = _tl_compat and _tl_compat.math or math; local _tl_math_maxinteger = math.maxinteger or math.pow(2, 53); local _tl_math_mininteger = math.mininteger or -math.pow(2, 53) - 1; local table = _tl_compat and _tl_compat.table or table; local _tl_table_unpack = unpack or table.unpack
       local t = { 1, 2, 3, 4 }
       print(_tl_table_unpack(t))
       local n = 42
+      local maxi = _tl_math_maxinteger
+      local mini = _tl_math_mininteger
       if math.type(n) == "integer" then
          print("hello")
+      end
+      if math.type(maxi) == "integer" then
+         print("maxi")
+      end
+      if math.type(mini) == "integer" then
+         print("mini")
       end
    ]]
 

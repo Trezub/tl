@@ -82,6 +82,12 @@ describe("warnings", function()
          { y = 1, msg = "unused variable a: integer" },
       }))
 
+      it("reports unused union narrowed in declaration", util.check_warnings([[
+         local s: string | number = 12
+      ]], {
+         { y = 1, msg = "unused variable s" },
+      }))
+
       it("should not report that a narrowed variable is unused", util.check_warnings([[
          local function foo(bar: string | number): string
             if bar is string then
@@ -93,6 +99,22 @@ describe("warnings", function()
          end
          foo()
       ]], { }))
+
+      it("should report a unused localized global (regression test for #677)", util.check_warnings([[
+         local print = print
+         local type = type
+         local _ENV = nil
+
+         return {
+             say = function (msg: any)
+                 if msg is string then
+                     print(msg)
+                 end
+             end,
+         }
+      ]], {
+         { y = 2, msg = "unused function type" },
+      }))
 
       it("reports when implicitly declared variables redeclare a local (for loop)", util.check_warnings([[
          local i = 1
@@ -112,6 +134,34 @@ describe("warnings", function()
       ]], {
          { y = 2, msg = "redeclaration of variable 'i' (originally declared at 1:16)" },
          { y = 1, msg = "unused variable i: integer" },
+      }))
+
+
+      it("reports redefined local functions", util.check_warnings([[
+         local function a() end
+         a()
+         local function a() end
+         a()
+      ]], {
+         { y = 3, msg = "redeclaration of function 'a' (originally declared at 1:10)" },
+      }))
+
+      it("reports local functions redefined as variables", util.check_warnings([[
+         local function a() end
+         a()
+         local a = 3
+         print(a)
+      ]], {
+         { y = 3, msg = "redeclaration of variable 'a' (originally declared at 1:10)" },
+      }))
+
+      it("reports local variables redefined as functions", util.check_warnings([[
+         local a = 3
+         print(a)
+         local function a() end
+         a()
+      ]], {
+         { y = 3, msg = "redeclaration of function 'a' (originally declared at 1:16)" },
       }))
    end)
 
@@ -168,6 +218,52 @@ describe("warnings", function()
          local type Foo = number
       ]], {
          { y = 1, msg = "unused type Foo: type number" }
+      }))
+   end)
+
+   describe("on return", function()
+      it("should report when discarding returns via expressions with 'and'", util.check_warnings([[
+         local function may_fail(chance: number): boolean, string
+            if math.random() >= chance then
+               return true
+            else
+               return fail, "unlucky this time!"
+            end
+         end
+
+         local function try_twice(c1: number, c2: number): boolean, string
+            return may_fail(c1)
+               and may_fail(c2)
+         end
+
+         local ok, err = try_twice(0.9, 0.5)
+         if not ok then
+            print(err)
+         end
+      ]], {
+         { y = 11, msg = "additional return values are being discarded due to 'and' expression; suggest parentheses if intentional" }
+      }))
+
+      it("should report when discarding returns via expressions with 'or'", util.check_warnings([[
+         local function may_fail(chance: number): boolean, string
+            if math.random() >= chance then
+               return true
+            else
+               return fail, "unlucky this time!"
+            end
+         end
+
+         local function try_twice(c1: number, c2: number): boolean, string
+            return may_fail(c1)
+                or may_fail(c2)
+         end
+
+         local ok, err = try_twice(0.5, 0.9)
+         if not ok then
+            print(err)
+         end
+      ]], {
+         { y = 11, msg = "additional return values are being discarded due to 'or' expression; suggest parentheses if intentional" }
       }))
    end)
 end)

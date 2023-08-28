@@ -32,9 +32,9 @@ do
       if on then
          if jit then
             jit.off()
-            tl.lex = function(input)
+            tl.lex = function(input, filename)
                jit.on()
-               local r1, r2 = tl_lex(input)
+               local r1, r2 = tl_lex(input, filename)
                jit.off()
                return r1, r2
             end
@@ -52,6 +52,12 @@ do
 
    is_turbo_on = function()
       return turbo_is_on
+   end
+end
+
+local function check_collect(i)
+   if i % 50 == 0 then
+      collectgarbage()
    end
 end
 
@@ -104,7 +110,7 @@ end
 
 local function find_file_in_parent_dirs(fname)
    for _ = 1, 20 do
-      local fd = io.open(fname, "r")
+      local fd = io.open(fname, "rb")
       if fd then
          fd:close()
          return fname
@@ -216,7 +222,7 @@ local function type_check_and_load(tlconfig, filename)
       os.exit(1)
    end
 
-   local chunk; chunk, err = (loadstring or load)(tl.pretty_print_ast(result.ast), "@" .. filename)
+   local chunk; chunk, err = (loadstring or load)(tl.pretty_print_ast(result.ast, tlconfig.gen_target), "@" .. filename)
    if err then
       die("Internal Compiler Error: Teal generator produced invalid Lua. " ..
           "Please report a bug at https://github.com/teal-language/tl\n\n" .. tostring(err))
@@ -230,14 +236,14 @@ local function write_out(tlconfig, result, output_file)
       return
    end
 
-   local ofd, err = io.open(output_file, "w")
+   local ofd, err = io.open(output_file, "wb")
 
    if not ofd then
       die("cannot write " .. output_file .. ": " .. err)
    end
 
    local _
-   _, err = ofd:write(tl.pretty_print_ast(result.ast) .. "\n")
+   _, err = ofd:write(tl.pretty_print_ast(result.ast, tlconfig.gen_target) .. "\n")
    if err then
       die("error writing " .. output_file .. ": " .. err)
    end
@@ -417,7 +423,7 @@ do
                   die("Something has gone wrong while executing the " ..
                       "\"gen_code\" part of the build file. Error : ".. tostring(message))
                end
-               local file = io.open(time_keeper_path, "w")
+               local file = io.open(time_keeper_path, "wb")
                file:write(last_edit_time)
                file:flush()
                file:close()
@@ -508,7 +514,7 @@ do
          end
       end
       if internal_output then
-         table.insert(exc_patterns, matcher(path_concat(tlconfig["internal_compiler_output"], "**/*.*")))
+         table.insert(exc_patterns, matcher(path_concat(tlconfig["internal_compiler_output"], "**" .. PATH_SEPARATOR .. "*.*")))
       end
 
       -- prepare build and source dirs
@@ -542,7 +548,7 @@ do
                      include = false
                   end
                   if build_path and meta_table.generated and meta_table.generated == self.generatedref then
-                     coroutine.yield(build_path .. "/" .. path, true)
+                     coroutine.yield(build_path .. PATH_SEPARATOR .. path, true)
                   else
 
                      -- TODO: print out patterns that include/exclude paths to help
@@ -717,9 +723,7 @@ do
             write_out(tlconfig, result, output_file)
          end
 
-         if i > 1 then
-            collectgarbage()
-         end
+         check_collect(i)
       end
 
       local ok = report_all_errors(tlconfig, env)
@@ -762,7 +766,7 @@ local function validate_config(config)
       quiet = "boolean",
       skip_compat53 = "boolean",
       gen_compat = { ["off"] = true, ["optional"] = true, ["required"] = true },
-      gen_target = { ["5.1"] = true, ["5.3"] = true },
+      gen_target = { ["5.1"] = true, ["5.3"] = true, ["5.4"] = true },
       disable_warnings = "{string}",
       warning_error = "{string}",
 
@@ -838,7 +842,7 @@ local function get_args_parser()
          :defmode("a")
 
    parser:option("--gen-target", "Minimum targeted Lua version for generated code.")
-         :choices({ "5.1", "5.3" })
+         :choices({ "5.1", "5.3", "5.4" })
 
    parser:flag("--skip-compat53", "Skip compat53 insertions.")
          :hidden(true)
@@ -903,6 +907,7 @@ local function get_config(cmd)
    if conf then
       local ok, user_config = pcall(conf)
       if not ok then
+         err = user_config
          die("Error loading tlconfig.lua:\n" .. err)
       end
 
@@ -1093,6 +1098,82 @@ end
 -- tl check
 --------------------------------------------------------------------------------
 
+local function split_drive(filename)
+   if PATH_SEPARATOR == "\\" then
+      local d, r = filename:match("^(.:)(.*)$")
+      if d then
+         return d, r
+      end
+   end
+   return "", filename
+end
+
+local cd_cache
+local function cd()
+   if cd_cache then
+      return cd_cache
+   end
+   local wd = os.getenv("PWD")
+   if not wd then
+      local pd = io.popen("cd", "rb")
+      wd = pd:read("*l")
+      pd:close()
+   end
+   cd_cache = wd
+   return wd
+end
+
+local function normalize(filename)
+   local drive = ""
+
+   if PATH_SEPARATOR == "\\" then
+      filename = filename:gsub("\\", "/")
+      drive, filename = split_drive(filename)
+   end
+
+   if filename:sub(1, 1) ~= "/" then
+      filename = cd() .. "/" .. filename
+      drive, filename = split_drive(filename)
+   end
+
+   local root = ""
+   if filename:sub(1, 1) == "/" then
+      root = "/"
+   end
+
+   local pieces = {}
+   for piece in filename:gmatch("[^/]+") do
+      if piece == ".." then
+         local prev = pieces[#pieces]
+         if not prev or prev == ".." then
+            table.insert(pieces, "..")
+         elseif prev ~= "" then
+            table.remove(pieces)
+         end
+      elseif piece ~= "." then
+         table.insert(pieces, piece)
+      end
+   end
+
+   filename = (drive .. root .. table.concat(pieces, "/")):gsub("/*$", "")
+
+   if PATH_SEPARATOR == "\\" then
+      filename = filename:gsub("/", "\\")
+   end
+
+   return filename
+end
+
+local function already_loaded(env, input_file)
+   input_file = normalize(input_file)
+   for file, _ in pairs(env.loaded) do
+      if normalize(file) == input_file then
+         return true
+      end
+   end
+   return false
+end
+
 commands["check"] = function(tlconfig, args)
    turbo(true)
    local env
@@ -1100,15 +1181,14 @@ commands["check"] = function(tlconfig, args)
       if not env then
          env = setup_env(tlconfig, input_file)
       end
-
-      local _, err = tl.process(input_file, env)
-      if err then
-         die(err)
+      if not already_loaded(env, input_file) then
+         local _, err = tl.process(input_file, env)
+         if err then
+            die(err)
+         end
       end
 
-      if i > 1 then
-         collectgarbage()
-      end
+      check_collect(i)
    end
 
    local ok = report_all_errors(tlconfig, env)
@@ -1163,9 +1243,7 @@ commands["gen"] = function(tlconfig, args)
       end
 
       table.insert(results, res)
-      if i > 1 then
-         collectgarbage()
-      end
+      check_collect(i)
    end
 
    for _, res in ipairs(results) do
@@ -1265,9 +1343,7 @@ do
                tr, trenv = tl.get_types(result, trenv)
             end
          end
-         if i > 1 then
-            collectgarbage()
-         end
+         check_collect(i)
       end
 
       local ok, _, _, w = report_all_errors(tlconfig, env)

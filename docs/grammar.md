@@ -38,7 +38,7 @@ precedence, see below.
 *      ‘global’ ‘function’ Name funcbody |
 *      ‘global’ ‘record’ Name recordbody |
 *      ‘global’ ‘enum’ Name enumbody |
-*      ‘global’ ‘type’ Name ‘=’ newtype
+*      ‘global’ ‘type’ Name [‘=’ newtype]
 
    attnamelist ::=  Name [attrib] {‘,’ Name [attrib]}
 
@@ -48,7 +48,7 @@ precedence, see below.
 
    label ::= ‘::’ Name ‘::’
 
-   funcname ::= Name {‘.’ Name} [‘:’ Name]
++  funcname ::= Name {‘.’ Name} ‘:’ Name | Name {‘.’ Name} ‘.’ Name
 
    varlist ::= var {‘,’ var}
 
@@ -108,7 +108,8 @@ precedence, see below.
 *  recordbody ::= [typeargs] {recordentry} ‘end’
 
 *  recordentry ::= ‘userdata’ | ‘{’ type ‘}’ |
-*      Name ‘=’ newtype | [‘metamethod’] recordkey ‘:’ type
+*      ‘type’ Name ‘=’ newtype | [‘metamethod’] recordkey ‘:’ type |
+*      ‘record’ recordbody | ‘enum’ enumbody
 
 *  recordkey ::= Name | ‘[’ LiteralString ‘]’
 

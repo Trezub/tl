@@ -52,6 +52,13 @@ for i, name in ipairs({"records", "arrayrecords"}) do
          { y = 2, msg = "syntax error: this syntax is no longer valid; declare nested record inside a record" },
       }))
 
+      it("accepts record as soft keyword", util.check([[
+         local record = 2
+         local t = {
+            record = record,
+         }
+      ]]))
+
       it("can be declared with 'global type'", util.check([[
          global type Point = record ]]..pick(i, "", "{Point}")..[[
             x: number
@@ -92,7 +99,7 @@ for i, name in ipairs({"records", "arrayrecords"}) do
             foo: R
          end
 
-         function id(r: R): R
+         local function id(r: R): R
             return r
          end
       ]]))
@@ -115,7 +122,7 @@ for i, name in ipairs({"records", "arrayrecords"}) do
             graphics: love_graphics
          end
 
-         function main()
+         global function main()
             love.graphics.print("Hello world", 100, 100)
          end
       ]]))
@@ -129,6 +136,22 @@ for i, name in ipairs({"records", "arrayrecords"}) do
          { msg = "attempt to redeclare field 'print' (only functions can be overloaded)" }
       }))
 
+      it("enum check in overloaded function", util.check_type_error([[
+         local enum E
+            "a"
+            "b"
+            "c"
+         end
+         local type R = record ]]..pick(i, "", "{number}")..[[
+            f: function(enums: {E})
+            f: function(tuple: {string, number})
+         end
+         local r: R
+         r.f({"a", "b", "x"})
+      ]], {
+         { y = 11, msg = "argument 1: string \"x\" is not a member of E" }
+      }))
+
       it("can report an error on unknown types in polymorphic definitions", util.check_type_error([[
          -- this reports an error
          local type R = record ]]..pick(i, "", "{R}")..[[
@@ -136,7 +159,7 @@ for i, name in ipairs({"records", "arrayrecords"}) do
             u: function(): string
          end
 
-         function f(r: R): R
+         local function f(r: R): R
             return r
          end
       ]], {
@@ -150,7 +173,7 @@ for i, name in ipairs({"records", "arrayrecords"}) do
             u: function(): UnknownType
          end
 
-         function f(r: R): R
+         local function f(r: R): R
             return r
          end
       ]], {
@@ -467,6 +490,19 @@ for i, name in ipairs({"records", "arrayrecords"}) do
          print(foo)
       ]]))
 
+      it("resolves nested type aliases to other aliases (see #527)", util.check([[
+         local record M
+            type Type1 = number
+            type Type2 = Type1
+         end
+
+         local function map<E>(arr: {E}): {E: number}
+         end
+
+         local arr: {M.Type2} = {}
+         local var: {M.Type2: number} = map(arr)
+      ]]))
+
       it("can use nested type aliases as types (see #416)", util.check_type_error([[
          local record F1 ]]..pick(i, "", "{F1}")..[[
             record A ]]..pick(i, "", "{A}")..[[
@@ -550,7 +586,7 @@ for i, name in ipairs({"records", "arrayrecords"}) do
             foo: R
          end
 
-         function id(r: R): R
+         local function id(r: R): R
             return r
          end
       ]]))
@@ -572,7 +608,7 @@ for i, name in ipairs({"records", "arrayrecords"}) do
             foo: R
          end
 
-         function id(r: R): R
+         local function id(r: R): R
             return r
          end
       ]], {
@@ -671,6 +707,31 @@ for i, name in ipairs({"records", "arrayrecords"}) do
 
          local foo = Foo.new()
       ]]))
+
+      it("creation of userdata records should be disallowed (#460)", util.check_type_error([[
+         local record Foo ]]..pick(i, "", "{number}")..[[
+            userdata
+            a: number
+         end
+         local foo: Foo = {}
+         foo = { a = 1 }
+         local function f(foo: Foo) end
+         f({})
+         f({ a = 2 })
+         local bar: Foo
+         foo = bar
+         f(bar)
+      ]], {
+         { y = 5, msg = "in local declaration: foo: got {}, expected Foo" },
+         select(i,
+            { y = 6, msg = "in assignment: userdata record doesn't match: record (a: number)" },
+            { y = 6, msg = "in assignment: userdata record doesn't match: record ({number}a: number)" }),
+         { y = 8, msg = "argument 1: got {}, expected Foo" },
+         select(i,
+            { y = 9, msg = "argument 1: userdata record doesn't match: record (a: number)" },
+            { y = 9, msg = "argument 1: userdata record doesn't match: record ({number}a: number)" }),
+         nil
+      }))
    end)
 end
 
@@ -828,3 +889,19 @@ describe("const field", function()
    ]])
 end)
 
+
+describe("arrayrecord", function()
+   it("assigning to array produces no warnings", util.check_warnings([[
+      local record R1
+         {string}
+
+         x: number
+      end
+
+      local v: R1 = { x = 10 }
+      v[1] = "hello"
+
+      local a: {string} = v
+      print(a)
+   ]], {}))
+end)

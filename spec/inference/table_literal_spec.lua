@@ -18,7 +18,7 @@ describe("bidirectional inference for table literals", function()
       { msg = "in record field: type: string 'who' is not a member of enum" },
    }))
 
-   it("directed inference produces correct results for incomplete records (regression test for #348)", util.check [[
+   it("directed inference produces correct results for incomplete records (regression test for #348)", util.check([[
       local record test_t
          a: number
          b: number
@@ -33,7 +33,7 @@ describe("bidirectional inference for table literals", function()
             b=2
          }
       }
-   ]])
+   ]]))
 
    it("directed inference produces correct results for methods (regression test for #407)", util.check_type_error([[
       local record Foo
@@ -49,5 +49,20 @@ describe("bidirectional inference for table literals", function()
       f:bar({ "a", "b" })
    ]], {
       { msg = 'expected an array: at index 2: string "b" is not a member of enum' }
+   }))
+
+   it("resolves nominals across nested generics (regression test for #499)", util.check_type_error([[
+      local record Tree<X>
+        {Tree<X>}
+        item: X
+      end
+
+      local t: Tree<number> = {
+        item = 1,
+        { item = 2 },
+        { item = "wtf", { item = 4 } },
+      }
+   ]], {
+      { msg = 'in record field: item: got string "wtf", expected number' }
    }))
 end)

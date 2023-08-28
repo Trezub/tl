@@ -19,10 +19,10 @@ describe("empty table without type annotation", function()
 
       t.foo = "bar"
    ]], {
-      { msg = "cannot index something that is not a record: {integer}" },
+      { msg = [[cannot index key 'foo' in array 't' of type {integer} (inferred at foo.tl:3:11)]] },
    }))
 
-   it("first use can be a function call", util.check [[
+   it("first use can be a function call", util.check([[
       local files = {}
       local pd = io.popen("git diff-tree -r HEAD", "r")
       for line in pd:lines() do
@@ -35,9 +35,9 @@ describe("empty table without type annotation", function()
       for i, f in ipairs(files) do
          print(f.mode, f.file)
       end
-   ]])
+   ]]))
 
-   it("has its type determined by its first reassignment", util.check [[
+   it("has its type determined by its first reassignment", util.check([[
       local function return_arr(): {number}
          local t = {}
          local arr = {1,2,3}
@@ -46,7 +46,7 @@ describe("empty table without type annotation", function()
          end
          return t
       end
-   ]])
+   ]]))
 
    it("cannot be reassigned to a non-table", util.check_type_error([[
       local function return_arr(): {number}
@@ -72,7 +72,7 @@ describe("empty table without type annotation", function()
          return t
       end
    ]], {
-      { msg = "cannot index something that is not a record: {integer} (inferred at foo.tl:5:" },
+      { msg = [[cannot index key 'foo' in array 't' of type {integer} (inferred at foo.tl:5:13)]] },
    }))
 
    it("inferred type is not const by default (#383)", util.check([[
@@ -113,7 +113,7 @@ describe("empty table without type annotation", function()
       return M
    ]]))
 
-   it("emptytable does not infer as a union, but rather its first table-like element", util.check [[
+   it("emptytable does not infer as a union, but rather its first table-like element", util.check([[
       local record Foo<T>
       end
       local function foo<U>(x: U | Foo<U>)
@@ -125,15 +125,29 @@ describe("empty table without type annotation", function()
       end
       local z: number | Foo<number>
       foo2(z)
-   ]])
+   ]]))
 
-   it("map keys are unary", util.check [[
+   it("map keys are unary", util.check([[
       local t = {}
       for i = 2, 254 do
          t[string.char(i)] = string.char(i + 1)
       end
 
       print(("hal"):gsub(".", t))
-   ]])
+   ]]))
 
+   it("does not get confused by flow-types in 'exp or {}' (regression test for #554)", util.check([[
+      local function ivalues<Value>(t: {any:Value}): function(): Value
+         local i = 0
+         return function(): Value
+            i = i + 1
+            return t[i]
+         end
+      end
+
+      local list: {string}
+      for x in ivalues(list or {}) do
+         print(x)
+      end
+   ]]))
 end)

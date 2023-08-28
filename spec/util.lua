@@ -19,12 +19,25 @@ collectgarbage("stop")
 local tl = require("tl")
 local assert = require("luassert")
 local lfs = require("lfs")
-local current_dir = assert(lfs.currentdir(), "unable to get current dir")
-local tl_executable = current_dir .. util.os_sep .. "tl"
+local initial_dir = assert(lfs.currentdir(), "unable to get current dir")
+local tl_executable = initial_dir .. util.os_sep .. "tl"
 
 local t_unpack = unpack or table.unpack
 
 util.tl_executable = tl_executable
+
+local function remove_dir(name)
+   if lfs.attributes(name, "mode") == "directory" then
+      for d in lfs.dir(name) do
+         if d ~= "." and d ~= ".." then
+            remove_dir(name .. util.os_sep .. d)
+         end
+      end
+      lfs.rmdir(name)
+   else
+      os.remove(name)
+   end
+end
 
 --------------------------------------------------------------------------------
 -- 'finally' queue - each Busted test can trigger only one 'finally' callback.
@@ -91,9 +104,9 @@ function util.mock_io(finally, filemap)
          table.insert(ps, p)
       end
 
-      -- try to find suffixes in filemap, from shortest to longest
+      -- try to find suffixes in filemap, from longest to shortest
       local basename
-      for i = #ps, 1, -1 do
+      for i = 1, #ps do
          basename = table.concat(ps, "/", i)
          if filemap[basename] then
             break
@@ -198,12 +211,25 @@ function util.tl_cmd(name, ...)
    return table.concat(cmd, " ") .. " "
 end
 
+function util.lua_cmd(...)
+   assert(select("#", ...) > 0, "no command provided")
+
+   local add_package_path = [[package.path = package.path .. ";]] .. initial_dir .. [[/?.lua"]]
+
+   local cmd = { util.lua_interpreter, "-e", add_package_path, ... }
+   for i = 2, #cmd do
+      cmd[i] = string.format("%q", cmd[i])
+   end
+
+   return table.concat(cmd, " ") .. " "
+end
+
 function util.chdir_setup()
    assert(lfs.chdir(util.os_tmp))
 end
 
 function util.chdir_teardown()
-   assert(lfs.chdir(current_dir))
+   assert(lfs.chdir(initial_dir))
 end
 
 math.randomseed(os.time())
@@ -216,7 +242,7 @@ function util.write_tmp_file(finally, content, ext)
 
    local full_name = tmp_file_name() .. "." .. (ext or "tl")
 
-   local fd = assert(io.open(full_name, "w"))
+   local fd = assert(io.open(full_name, "wb"))
    fd:write(content)
    fd:close()
 
@@ -252,7 +278,7 @@ function util.write_tmp_dir(finally, dir_structure)
                content = trim_end(content)
             end
 
-            local fd = io.open(prefix .. name, "w")
+            local fd = io.open(prefix .. name, "wb")
             fd:write(content)
             fd:close()
          end
@@ -260,17 +286,8 @@ function util.write_tmp_dir(finally, dir_structure)
    end
    traverse_dir(dir_structure)
    on_finally(finally, function()
-      os.execute("rm -r " .. full_name)
-      -- local function rm_dir(dir_structure, prefix)
-      --    prefix = prefix or full_name
-      --    for name, content in pairs(dir_structure) do
-      --       if type(content) == "table" then
-      --          rm_dir(prefix .. name .. "/")
-      --       end
-      --       os.remove(prefix .. name)
-      --    end
-      -- end
-      -- rm_dir(dir_structure)
+      remove_dir(full_name)
+      --os.execute("rm -r " .. full_name)
    end)
    return full_name
 end
@@ -346,7 +363,7 @@ end
 function util.read_file(name)
    assert(type(name) == "string")
 
-   local fd = assert(io.open(name, "r"))
+   local fd = assert(io.open(name, "rb"))
    local output = fd:read("*a")
    fd:close()
    return output
@@ -409,14 +426,16 @@ local function filter_by(tag, warnings)
    return out
 end
 
-local function check(lax, code, unknowns)
+local function check(lax, code, unknowns, gen_target)
    return function()
-      local tokens = tl.lex(code)
-      local syntax_errors = {}
-      local _, ast = tl.parse_program(tokens, syntax_errors)
+      local ast, syntax_errors = tl.parse(code, "foo.lua")
       assert.same({}, syntax_errors, "Code was not expected to have syntax errors")
       local batch = batch_assertions()
-      local result = tl.type_check(ast, { filename = "foo.lua", lax = lax })
+      local gen_compat
+      if gen_target == "5.4" then
+         gen_compat = "off"
+      end
+      local result = tl.type_check(ast, { filename = "foo.lua", lax = lax, gen_target = gen_target, gen_compat = gen_compat })
       batch:add(assert.same, {}, result.type_errors)
 
       if unknowns then
@@ -428,14 +447,16 @@ local function check(lax, code, unknowns)
    end
 end
 
-local function check_type_error(lax, code, type_errors)
+local function check_type_error(lax, code, type_errors, gen_target)
    return function()
-      local tokens = tl.lex(code)
-      local syntax_errors = {}
-      local _, ast = tl.parse_program(tokens, syntax_errors)
+      local ast, syntax_errors = tl.parse(code, "foo.tl")
       assert.same({}, syntax_errors, "Code was not expected to have syntax errors")
       local batch = batch_assertions()
-      local result = tl.type_check(ast, { filename = "foo.tl", lax = lax })
+      local gen_compat
+      if gen_target == "5.4" then
+         gen_compat = "off"
+      end
+      local result = tl.type_check(ast, { filename = "foo.tl", lax = lax, gen_target = gen_target, gen_compat = gen_compat })
       local result_type_errors = combine_result(result, "type_errors")
 
       batch_compare(batch, "type errors", type_errors, result_type_errors)
@@ -443,10 +464,11 @@ local function check_type_error(lax, code, type_errors)
    end
 end
 
-function util.check(code)
+function util.check(code, gen_target)
    assert(type(code) == "string")
+   assert(gen_target == nil or type(gen_target) == "string")
 
-   return check(false, code)
+   return check(false, code, nil, gen_target)
 end
 
 function util.lax_check(code, unknowns)
@@ -464,11 +486,11 @@ function util.strict_and_lax_check(code, unknowns)
       and check(false, code, unknowns)
 end
 
-function util.check_type_error(code, type_errors)
+function util.check_type_error(code, type_errors, gen_target)
    assert(type(code) == "string")
    assert(type(type_errors) == "table")
 
-   return check_type_error(false, code, type_errors)
+   return check_type_error(false, code, type_errors, gen_target)
 end
 
 function util.strict_check_type_error(code, type_errors, unknowns)
@@ -499,9 +521,7 @@ function util.check_syntax_error(code, syntax_errors)
    code = trim_end(code)
 
    return function()
-      local tokens = tl.lex(code)
-      local errors = {}
-      local _, ast = tl.parse_program(tokens, errors)
+      local ast, errors = tl.parse(code, "foo.tl")
       local batch = batch_assertions()
       batch_compare(batch, "syntax errors", syntax_errors, errors)
       batch:assert()
@@ -509,7 +529,7 @@ function util.check_syntax_error(code, syntax_errors)
    end
 end
 
-function util.check_warnings(code, warnings)
+function util.check_warnings(code, warnings, type_errors)
    assert(type(code) == "string")
    assert(type(warnings) == "table")
 
@@ -517,33 +537,34 @@ function util.check_warnings(code, warnings)
       local result = tl.process_string(code)
       local batch = batch_assertions()
       batch_compare(batch, "warnings", warnings, result.warnings or {})
+      if type_errors then
+         batch_compare(batch, "type errors", type_errors, result.type_errors or {})
+      end
       batch:assert()
    end
 end
 
-local function gen(lax, code, expected)
+local function gen(lax, code, expected, gen_target)
    return function()
-      local tokens = tl.lex(code)
-      local syntax_errors = {}
-      local _, ast = tl.parse_program(tokens, syntax_errors)
+      local ast, syntax_errors = tl.parse(code, "foo.tl")
       assert.same({}, syntax_errors, "Code was not expected to have syntax errors")
-      local result = tl.type_check(ast, { filename = "foo.tl", lax = lax })
+      local result = tl.type_check(ast, { filename = "foo.tl", lax = lax, gen_target = gen_target })
       assert.same({}, result.type_errors)
       local output_code = tl.pretty_print_ast(ast)
 
-      local expected_tokens = tl.lex(expected)
-      local _, expected_ast = tl.parse_program(expected_tokens, {})
+      local expected_ast, expected_errors = tl.parse(expected, "foo.tl")
+      assert.same({}, expected_errors, "Code was not expected to have syntax errors")
       local expected_code = tl.pretty_print_ast(expected_ast)
 
       assert.same(expected_code, output_code)
    end
 end
 
-function util.gen(code, expected)
+function util.gen(code, expected, gen_target)
    assert(type(code) == "string")
    assert(type(expected) == "string")
 
-   return gen(false, code, expected)
+   return gen(false, code, expected, gen_target)
 end
 
 return util

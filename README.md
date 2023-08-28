@@ -1,9 +1,8 @@
 
 Teal
 ====
-
-[![Build Status](https://travis-ci.org/teal-language/tl.svg?branch=master)](https://travis-ci.org/teal-language/tl)
-[![Join the chat at https://gitter.im/dotnet/coreclr](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/teal-language/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Build Status](https://github.com/teal-language/tl/actions/workflows/ci.yml/badge.svg)](https://github.com/teal-language/tl/actions/workflows/ci.yml)
+[![Join the chat at https://gitter.im/teal-language/community](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/teal-language/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 This is the repository of **tl**, the compiler for Teal, a typed dialect of Lua.
 
@@ -21,6 +20,9 @@ the project's progress:
 * [Minimalism versus types (2019)](https://www.youtube.com/watch?v=OPyBQRndLUk)
 * [Minimalistic typed Lua is here (2020)](https://www.youtube.com/watch?v=HfnjUCRzRKU)
 * [What's Next for Teal (2021)](https://www.youtube.com/watch?v=OqXbnaDR8QY)
+
+Check also the [tutorial](docs/tutorial.md) to get started with an overview of
+the language.
 
 ## Installing
 
@@ -82,7 +84,8 @@ compile `.tl` files on-the-fly.
 
 ## Documentation
 
-You can learn more about programming with Teal in the [tutorial](docs/tutorial.md).
+You can learn more about programming and using Teal in the [docs/](docs/)
+folder. The [tutorial](docs/tutorial.md) is a great place to start!
 
 ## Type definitions
 

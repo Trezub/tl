@@ -1,3 +1,334 @@
+# 0.15.2
+
+2023-04-27
+
+This is primarily a bugfix release, but it does include
+some significant quality-of-life improvements when using
+record methods.
+
+This release features commits by JR Mitchell, @IcyLava
+and Hisham Muhammad.
+
+## What's New
+
+### Language
+
+* Improved checks over uses of `self` in forward-declared
+  methods:
+  * In a `record` declaration, when fields of type `function`
+    are declared within a and they have a matching `self`
+    first argument, those are now treated as methods
+    (similar to explicit `function R:method` declarations
+    using colon-notation), so misuses of `:` versus `.`
+    can be detected in those as well.
+* Warn when invoking a method as a function, even if the type
+  of the first non-self argument matches.
+* Standard library improvements:
+  * Add optional third argument for `string.rep`
+
+### API
+
+* Public signature of `tl.gen` features second return value of
+  type `Result`
+
+### Fixes
+
+* Acept record method declaration for nested records. (#648)
+* Do not consider an inner type to be a missing key when declaring
+  a total table. (#647)
+* Change inference order in function calls to better match programmer
+  intent: infer `self` (which is usually explicitly given)
+  before return values (which are implied by context).
+* Preserve narrowed union in a loop if the variable is not assigned. (#617)
+* Don't miss a "unused variable" warning when it is a narrowed union.
+* Fixes the detection of record method redeclaration. (#620)
+* Fixes the error message when number of return arguments is
+  mismatched. (#618)
+
+# 0.15.1
+
+2023-01-23
+
+A minor bugfix release, thanks to feedback received upon the release
+of 0.15.03
+
+This release features commits by Hisham Muhammad.
+
+## What's New
+
+### Fixes
+
+* Fixes resolution of nominals across scope levels.
+* Fixes a crash when resolving nested records in a record function. (#615)
+* Avoid spurious inference warnings in local declarations.
+
+# 0.15.0
+
+2023-01-20
+
+Two new language features, a bunch of inference improvements, some more
+stricter checks for correctness, and a bunch of fixes! There's a lot to unpack
+in this release, but all changes should be backwards-compatible for correct
+code, so migration should be smooth for end-users of the compiler.
+
+However, if you're using `tl` module API directly, please note that there are
+some API changes, listed below.
+
+This release features commits by Li Jin, Carl Lei, Yang Li,
+Pierre Chapuis, @lenscas, Stéphane Veyret, and Hisham Muhammad.
+
+## What's New
+
+### Language
+
+* Type-only `require`:
+  * Adds new syntax for requiring a module's exported type
+    without generating a `require()` call in the output Lua:
+    `local type MyType = require("mytype")` -- circular
+    definitions of `local type`-required types are allowed,
+    as long as the type is only referenced but its contents
+    are not dereferenced.
+* New variable attribute `<total>`:
+  * It declares a const variable with a table where the
+    domain of its keys are totally declared.
+  * This check can only be applied when a literal table is given
+    at the time of variable initialization, and only for table types
+    with well-known finite domains: maps with enum keys, maps with
+    boolean keys, records.
+  * Note that the requirement is that keys are declared: they may
+    still be explicitly declared to be nil.
+* Type inference improvements:
+  * Improved flow-typing in `if` blocks - if a block ends
+    with `return`, then the remainder of the function can
+    infer the negation of its condition.
+  * In contexts where the expected type of an expression
+    is known (e.g. assignments, declarations with explicit
+    type signatures), the return type a function call can
+    now determine the type argument of a function.
+    * In particular, `local x: T = setmetatable({}, mt)`
+      can now infer that `{}` is `T` without a cast.
+  * When initializing a union with a value, that value
+    is now used by the flow-typing engine to narrow the
+    variable's concrete known type.
+* Local functions can be forward-declared with a `local`
+  variable declaration and then implemented with bare
+  `function` notation, more similarly to how record functions
+  (and Lua functions) work.
+* Handling of `.` and index notations is now more consistent
+  for both maps and records:
+  * Map keys can now use `.`-notation like records, and
+    get the same checks (e.g. if a key type is a valid enum)
+  * `__index` metamethod works for `.`-notation as well.
+* Some stricter checks:
+  * Unused type arguments in function signatures are now
+    flagged as an error.
+  * Using the `#` operator on a numeric-keyed map now produces a
+    warning, and on a non-numeric-keyed map it produces an error.
+  * Redeclaration of boolean keys in a map literal are
+    now an error.
+  * Cannot declare a union between multiple tuple types
+    as these can't be discriminated.
+  * Cannot redeclare a record method with different type
+    signatures; produces a warning when redeclaring with
+    the same type signature.
+* Standard library improvements:
+  * `pcall` and `xpcall` have vararg return types
+
+### Fixes
+
+* Fixed check between `or` expression and nominal unions.
+* Fixed function call return values when returning
+  unions with type arguments. (#604)
+* Fixed an error when exporting type aliases. (#586)
+* `__call` metamethods that are declared using a type alias
+  now resolve correctly. (#605)
+* Generic return types are more consistenly checked,
+  potentially reporting errors that went undetected before.
+* Fixed type variable name conflicts in record functions,
+  ensuring nested uses of generic record functions using
+  type variables don't cause conflicts. (#560)
+* Fixed the inference of type arguments in return values. (#512)
+* Fixed the error message for redefined functions. (#566)
+* Fixed a case where a userdata record type is not
+  resolved properly. (#585)
+* Fixed some issues with the `<close>` attribute.
+* `tl warnings` no longer misses some warning types.
+
+### Code generation
+
+* Report error on unterminated long comments instead of
+  generating invalid code.
+* Cleaner code is produced for `is nil` checks.
+
+### API
+
+API changes for more consistent processing of syntax errors:
+
+* `tl.lex` changed: it now returns an `{Error}` array instead
+  of a list of error Tokens.
+  * from `function tl.lex(input: string): {Token}, {Token}`
+  * to `function tl.lex(input: string, filename: string): {Token}, {Error}`
+* `tl.parse_program` changed: it no longer returns the first
+  integer argument, which as always ignored by every caller.
+  * from `function tl.parse_program(tokens: {Token}, errs: {Error}, filename: string): integer, Node, {string}`
+  * to `function tl.parse_program(tokens: {Token}, errs: {Error}, filename: string): Node, {string}`
+* `tl.parse` is a new function that combines
+  `tl.lex` and `tl.parse_program` the right way, avoiding previous
+  mistakes; this is the preferred function to use moving forward.
+  * signature: `function tl.parse(input: string, filename: string): Node, {Error}, {string}`
+
+### Tooling
+
+* Better handling of newlines on Windows.
+* `tl types`: in function calls of polymorphic functions, now
+  the return type of the resolved function is reported.
+* More informative pretty-print of polymorphic function signatures
+  in error messages.
+* More informative error message for field assignment failures.
+* Improved error message for inconsistent fields (#576)
+* The parser now does some lookahead heuristics to provide nicer
+  error messages.
+* The compiler now detects mis-aligned `end` keywords when reporting
+  about unmatched blocks, which helps pointing to the place where a
+  mistake actually occurred, instead of the end of the file.
+* For debugging the compiler itself:
+  * new environment variable mode `TL_DEBUG=1` inspects AST nodes
+    and types as program is compiled.
+  * `TL_DEBUG` with a negative value `-x` will run like `TL_DEBUG=1`
+    but halt the compiler after processing input line `x`.
+
+# 0.14.1
+
+2022-08-23
+
+And a week after 0.14.0, here's 0.14.1, with bugfixes to a few regressions
+identified by users. This is essentially a bugfix release, with a few
+improvements triggered via regressions or confusing error messages.
+
+This release features commits by Hisham Muhammad.
+
+## What's New
+
+### Fixes
+
+* Improved error reporting on declarations with missing `local`/`global`
+* Ensured `exp or {}` with empty tables continues to work as it used to
+  in 0.13.x, skipped more advanced flow-typing as simply returning the
+  type of the left-hand side `exp`.
+* Improved propagation of invalid types in unions
+  * Avoids weird messages such as `got X | Y, expected X | Y`
+    when "Y" is invalid in the scope, but was valid on declaration
+    of a function argument, for example.
+* Fix missing bidirectional flow of expected types in `return` expressions
+  and expand it on string constants. (#553)
+  * This is almost a feature as flow-checking was made smarter for
+    string constants, but it takes the shape of a regression test because
+    `return` expression checks were incomplete and caused some correct
+    code to pass type checking before which stopped passing on 0.14.0
+    when some checks were extended. We further extend them here to make
+    more valid code pass.
+* Fixes a crash when resolving a "flattened" union. (#551)
+
+# 0.14.0
+
+2022-08-16
+
+It's been a year! It was good to let the language sit for a while and
+see what kind of feedback we get from real world usage. This has also been
+an opportunity to get bug reports and fixes in, to help further stabilize
+the compiler.
+
+This release features commits by Li Jin, Enrique García Cota, Patrick
+Desaulniers, Mark Tulley, Corey Williamson, @Koeng101 and Hisham Muhammad.
+
+## What's New
+
+### Language
+
+* Global functions now require `global function`, you can no longer
+  declare them with a bare `function`; this makes it more consistent
+  with other global variables. (#500)
+* Forward references for global types:
+  * `global type Name` can be used to forward-declare a type and
+    use it, for example, in record fields, even if it is declared
+    in another file. (#534)
+* Polymorphic functions (as declared in record methods) can be used
+  as iterators for a generic `for`. (#525)
+* You can no longer define a global with the same name as a local which
+  is already in scope. (#545)
+* Initial support for the `__index` metamethod: you can declare it
+  as a function. (#541)
+* Dropped support for the old backtick syntax for type variables.
+* Type checker checks validity of Lua 5.4 `<close>` annotations:
+  * the output target must be set to "5.4"
+  * there can be only one `<close>` variable per declaration (to ensure
+    correct order of `__close` metamethods being called)
+  * the type of the variable is closable
+  * globals can't be `<close>`
+  * `<close>` variables can't be assigned to
+* Nested type arguments are now valid syntax without requiring a
+  disambiguating space. The parser used to reject constructs of the
+  type `X<Y<T>>` due to ambiguity with `>>`; it is now accepted
+  (old time C++ coders will recall this same issue with C++98!)
+* Standard library improvements:
+  * `math.maxinteger` and `max.mininteger` are always available
+    (in any Lua version, with or without lua-compat-5.3 installed)
+
+### Code generation
+
+* Local types are now elided from generated code if they are never
+  used in a concrete value context: if you declare a `local type T`
+  such as a function alias, it no longer produces a `local T = {}`
+  in the Lua output.
+
+### API
+
+* `tl.pretty_print_ast` now takes a `TargetMode` argument to specify
+  flavor of Lua to produce in output:
+  * new `TargetMode` for outputting Lua 5.4-specific code including
+    `<const>` and `<close>` annotations.
+* `tl.load` now always runs the type checker, which is needed to produce
+  type information required to output correct code in some cases.
+  The default behavior, however, remains backwards compatible and
+  allows code to run in the presence of type checking errors.
+  You can override this behavior and make `tl.load` return `nil, err`
+  in case of type checking errors by using a "c" prefix in the mode flag
+  (e.g. "ct", "cb", "cbt").
+* `tl.type_check` returns two values.
+
+### Tooling
+
+* Project CI now runs on GitHub Actions
+* Windows portability improvements
+  * Windows and Mac now get tested regularly in the GitHub Actions CI!
+* New hint warning when the value of a function with multiple return values
+  is being returned as part of an expression, causing the additional returns
+  to be lost.
+* Improved error messages for map errors.
+* `tl check` avoids re-checking files already loaded in the environment:
+  this allows you to check your `global_env_def` module without getting
+  redeclaration errors.
+* Build script for stand-alone binary is now included in the repository.
+
+### Fixes
+
+* Fixed resolution of type variables to avoid clashes when nested uses
+  of generic functions used the same type variable name. (#442)
+* Map index keys are checked nominally, not structurally. (#533)
+* Fixed flow checking of enums in `or`. (#487)
+* Properly return type errors for fields when comparing records. (#456)
+* Fixed a stack overflow when comparing unions with type variables. (#507)
+* Fixed a stack overflow in record comparisons. (#501)
+* It now reports the location of a redeclared record correctly. (#542)
+* Fixed resolution of nested type aliases (#527) and nested nominals (#499).
+* Fixed check of inconsistent record function declarations. (#517)
+* `tl.loader` reports correct filename in debug information. (#508)
+* Fixed error message when `tlconfig.lua` contains errors.
+* Tables can't be assigned to record types declared to be `userdata`. (#460)
+* Fix check of arrays of enums in overloaded record functions.
+* Fixed crash when attempting to declare a record method on an
+  unknown variable. (#470)
+
 # 0.13.2
 
 2021-07-30
@@ -322,7 +653,7 @@ This new release does not include big language changes, but includes a lot of
 new stuff! The new `tl types` infrastructure for IDE tooling, `build.tl`
 support in `tl build`, code generation options, and tons of bugfixes.
 
-This release features commits by Corey Williamson, lenscas, Patrick
+This release features commits by Corey Williamson, @lenscas, Patrick
 Desaulniers and Hisham Muhammad.
 
 ## What's New
